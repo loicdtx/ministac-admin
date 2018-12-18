@@ -15,7 +15,40 @@ def mlt_to_cc(f):
 
 
 def mtl_to_geom(f):
-    pass
+    with open(f) as fp:
+        for line in fp:
+            if 'CORNER_UL_LAT_PRODUCT' in line:
+                ul_lat = float(line.split('=')[1].strip())
+                continue
+            if 'CORNER_UL_LON_PRODUCT' in line:
+                ul_lon = float(line.split('=')[1].strip())
+                continue
+            if 'CORNER_UR_LAT_PRODUCT' in line:
+                ur_lat = float(line.split('=')[1].strip())
+                continue
+            if 'CORNER_UR_LON_PRODUCT' in line:
+                ur_lon = float(line.split('=')[1].strip())
+                continue
+            if 'CORNER_LL_LAT_PRODUCT' in line:
+                ll_lat = float(line.split('=')[1].strip())
+                continue
+            if 'CORNER_LL_LON_PRODUCT' in line:
+                ll_lon= float(line.split('=')[1].strip())
+                continue
+            if 'CORNER_LR_LAT_PRODUCT' in line:
+                lr_lat = float(line.split('=')[1].strip())
+                continue
+            if 'CORNER_LR_LON_PRODUCT' in line:
+                lr_lon = float(line.split('=')[1].strip())
+                continue
+    coords = [[[ul_lon, ul_lat],
+               [ll_lon, ll_lat],
+               [lr_lon, lr_lat],
+               [ur_lon, ur_lat],
+               [ul_lon, ul_lat]]]
+    geom = {'type': 'Polygon',
+            'coordinates': coords}
+    return geom
 
 
 def xml_to_meta(f):
