@@ -14,7 +14,7 @@ def mlt_to_cc(f):
     pass
 
 
-def mtl_to_geom(f):
+def parse_mtl(f):
     with open(f) as fp:
         for line in fp:
             if 'CORNER_UL_LAT_PRODUCT' in line:
@@ -41,6 +41,9 @@ def mtl_to_geom(f):
             if 'CORNER_LR_LON_PRODUCT' in line:
                 lr_lon = float(line.split('=')[1].strip())
                 continue
+            if 'CLOUD_COVER_LAND' in line:
+                cc = float(line.split('=')[1].strip())
+                continue
     coords = [[[ul_lon, ul_lat],
                [ll_lon, ll_lat],
                [lr_lon, lr_lat],
@@ -48,11 +51,30 @@ def mtl_to_geom(f):
                [ul_lon, ul_lat]]]
     geom = {'type': 'Polygon',
             'coordinates': coords}
-    return geom
+    return (cc, geom)
 
 
-def xml_to_meta(f):
-    pass
+def parse_xml(f):
+    # Start parsing xml
+    root = ET.parse(f).getroot()
+    ns = 'http://espa.cr.usgs.gov/v2'
+    # Build datetime from date and time
+    date_str = root.find('ns:global_metadata/ns:acquisition_date',
+                         namespaces={'ns': ns}).text
+    time_str = root.find('ns:global_metadata/ns:scene_center_time',
+                         namespaces={'ns': ns}).text
+    dt_str = '%sT%sZ' % (date_str, time_str[:8])
+    # satellite sensor metadata
+    sensor = root.find('ns:global_metadata/ns:instrument',
+                           namespaces={'ns': ns}).text
+    spacecraft = root.find('ns:global_metadata/ns:satellite',
+                          namespaces={'ns': ns}).text
+    # Scene corners in projected coordinates
+    utm_zone = int(root.find('ns:global_metadata/ns:projection_information/ns:utm_proj_params/ns:zone_code',
+                             namespaces={'ns': ns}).text)
+    crs = CRS({'proj': 'utm',
+               'zone': utm_zone})
+    return(dt_str, sensor, spacecraft, crs)
 
 
 def parse_scene(path):
@@ -81,25 +103,6 @@ def parse_scene(path):
         raise ValueError('Could not identify a unique xml or mtl metadata file')
     mtl_file = mtl_file_list[0]
     xml_file = xml_file_list[0]
-    # Start parsing xml
-    root = ET.parse(mtl_file).getroot()
-    ns = 'http://espa.cr.usgs.gov/v2'
-    # Build datetime from date and time
-    date_str = root.find('ns:global_metadata/ns:acquisition_date',
-                         namespaces={'ns': ns}).text
-    time_str = root.find('ns:global_metadata/ns:scene_center_time',
-                         namespaces={'ns': ns}).text
-    dt_str = '%sT%s' % (date_str, time_str[:8])
-    # satellite sensor metadata
-    sensor = root.find('ns:global_metadata/ns:instrument',
-                           namespaces={'ns': ns}).text
-    spacecraft = root.find('ns:global_metadata/ns:satellite',
-                          namespaces={'ns': ns}).text
-    # Scene corners in projected coordinates
-    utm_zone = int(root.find('ns:global_metadata/ns:projection_information/ns:utm_proj_params/ns:zone_code',
-                             namespaces={'ns': ns}).text)
-    crs = CRS({'proj': 'utm',
-               'zone': utm_zone})
     d = {"id": scene_id,
          "type": "Feature",
          "bbox": bbox,
