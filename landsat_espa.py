@@ -7,11 +7,8 @@ import re
 import xml.etree.ElementTree as ET
 
 from rasterio.crs import CRS
+from rasterio.features import bounds
 from pyproj import Proj
-
-
-def mlt_to_cc(f):
-    pass
 
 
 def parse_mtl(f):
@@ -58,6 +55,8 @@ def parse_xml(f):
     # Start parsing xml
     root = ET.parse(f).getroot()
     ns = 'http://espa.cr.usgs.gov/v2'
+    product_id = root.find('ns:global_metadata/ns:product_id',
+                         namespaces={'ns': ns}).text
     # Build datetime from date and time
     date_str = root.find('ns:global_metadata/ns:acquisition_date',
                          namespaces={'ns': ns}).text
@@ -72,9 +71,13 @@ def parse_xml(f):
     # Scene corners in projected coordinates
     utm_zone = int(root.find('ns:global_metadata/ns:projection_information/ns:utm_proj_params/ns:zone_code',
                              namespaces={'ns': ns}).text)
+    wrs_path = root.find('ns:global_metadata/ns:wrs',
+                         namespaces={'ns': ns}).attrib['path']
+    wrs_row = root.find('ns:global_metadata/ns:wrs',
+                         namespaces={'ns': ns}).attrib['row']
     crs = CRS({'proj': 'utm',
                'zone': utm_zone})
-    return(dt_str, sensor, spacecraft, crs)
+    return(product_id, dt_str, sensor, spacecraft, crs, wrs_path, wrs_row)
 
 
 def parse_scene(path):
@@ -103,14 +106,19 @@ def parse_scene(path):
         raise ValueError('Could not identify a unique xml or mtl metadata file')
     mtl_file = mtl_file_list[0]
     xml_file = xml_file_list[0]
-    d = {"id": scene_id,
+    # Start parsing
+    cc, geom = parse_mtl(mtl_file)
+    bbox = bounds(geom)
+    product_id, dt_str, sensor, spacecraft, crs, wrs_path, wrs_row = parse_xml(xml_file)
+    bands_path = os.path.join(path, product_id)
+    d = {"id": product_id,
          "type": "Feature",
          "bbox": bbox,
          "geometry": geom,
          "properties": {
            "datetime": dt_str,
            "c:description": "Landsat data processed to surface reflectance on the espa platform",
-           "eo:processing_level": level, # e.g. L1T
+           "eo:processing_level": 'L1', # e.g. L1T
            "eo:spacecraft": spacecraft,
            "eo:sensor": sensor,
            "eo:gsd": 30.0,
@@ -121,11 +129,11 @@ def parse_scene(path):
          },
          "assets" :{
            "metadata": {
-             "href": metadata_path,
-             "type": "mtl"
+             "href": xml_file,
+             "type": "xml"
            },
            "blue": {
-             "href": blue_path,
+             "href": '',
              "type": "image/vnd.stac.geotiff",
            },
            "green": {
