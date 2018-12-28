@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
+from pprint import pprint
 import os
 import sys
+import argparse
 from glob import glob
 import re
 import xml.etree.ElementTree as ET
@@ -9,6 +11,25 @@ import xml.etree.ElementTree as ET
 from rasterio.crs import CRS
 from rasterio.features import bounds
 from pyproj import Proj
+
+
+LANDSAT_BANDS = {'TM': {'blue': 'sr_band1',
+                        'green': 'sr_band2',
+                        'red': 'sr_band3',
+                        'nir': 'sr_band4',
+                        'swir1': 'sr_band5',
+                        'swir2': 'sr_band7',
+                        'pixel_qa': 'pixel_qa',
+                        'radsat_qa': 'radsat_qa'},
+                 'OLI_TIRS': {'blue': 'sr_band2',
+                              'green': 'sr_band3',
+                              'red': 'sr_band4',
+                              'nir': 'sr_band5',
+                              'swir1': 'sr_band6',
+                              'pixel_qa': 'pixel_qa',
+                              'radsat_qa': 'radsat_qa',
+                              'swir2': 'sr_band7'}}
+LANDSAT_BANDS['ETM'] = LANDSAT_BANDS['TM']
 
 
 def parse_mtl(f):
@@ -51,33 +72,21 @@ def parse_mtl(f):
     return (cc, geom)
 
 
-def parse_xml(f):
-    # Start parsing xml
-    root = ET.parse(f).getroot()
-    ns = 'http://espa.cr.usgs.gov/v2'
-    product_id = root.find('ns:global_metadata/ns:product_id',
-                         namespaces={'ns': ns}).text
-    # Build datetime from date and time
-    date_str = root.find('ns:global_metadata/ns:acquisition_date',
-                         namespaces={'ns': ns}).text
-    time_str = root.find('ns:global_metadata/ns:scene_center_time',
-                         namespaces={'ns': ns}).text
-    dt_str = '%sT%sZ' % (date_str, time_str[:8])
-    # satellite sensor metadata
-    sensor = root.find('ns:global_metadata/ns:instrument',
-                           namespaces={'ns': ns}).text
-    spacecraft = root.find('ns:global_metadata/ns:satellite',
-                          namespaces={'ns': ns}).text
-    # Scene corners in projected coordinates
-    utm_zone = int(root.find('ns:global_metadata/ns:projection_information/ns:utm_proj_params/ns:zone_code',
-                             namespaces={'ns': ns}).text)
-    wrs_path = root.find('ns:global_metadata/ns:wrs',
-                         namespaces={'ns': ns}).attrib['path']
-    wrs_row = root.find('ns:global_metadata/ns:wrs',
-                         namespaces={'ns': ns}).attrib['row']
-    crs = CRS({'proj': 'utm',
-               'zone': utm_zone})
-    return(product_id, dt_str, sensor, spacecraft, crs, wrs_path, wrs_row)
+def parse_xml(root, field, attrib=None, ns='http://espa.cr.usgs.gov/v2'):
+    if attrib is None:
+        out = root.find('ns:global_metadata/ns:%s' % field,
+                        namespaces={'ns': ns}).text
+    else:
+        out = root.find('ns:global_metadata/ns:%s' % field,
+                        namespaces={'ns': ns}).attrib[attrib]
+    return out
+
+
+def get_band_path(root, color, instrument, ns='http://espa.cr.usgs.gov/v2'):
+    out = root.find('ns:bands/ns:band[@name="%s"]/ns:file_name' %
+                    LANDSAT_BANDS[instrument][color],
+                    namespaces={'ns': ns}).text
+    return out
 
 
 def parse_scene(path):
@@ -107,10 +116,30 @@ def parse_scene(path):
     mtl_file = mtl_file_list[0]
     xml_file = xml_file_list[0]
     # Start parsing
+    # First mtl
     cc, geom = parse_mtl(mtl_file)
     bbox = bounds(geom)
-    product_id, dt_str, sensor, spacecraft, crs, wrs_path, wrs_row = parse_xml(xml_file)
-    bands_path = os.path.join(path, product_id)
+    # second xml
+    root = ET.parse(xml_file).getroot()
+    product_id = parse_xml(root, 'product_id')
+    # Date and time
+    date_str = parse_xml(root, 'acquisition_date')
+    time_str = parse_xml(root, 'scene_center_time')
+    dt_str = '%sT%sZ' % (date_str, time_str[:8])
+    # sensor
+    sensor = parse_xml(root, 'instrument')
+    # Spacecraft
+    spacecraft = parse_xml(root, 'satellite')
+    # crs
+    utm_zone = int(root.find('ns:global_metadata/ns:projection_information/ns:utm_proj_params/ns:zone_code',
+                             namespaces={'ns': 'http://espa.cr.usgs.gov/v2'}).text)
+    crs = CRS({'proj': 'utm',
+               'zone': utm_zone})
+    # WRS2 PR
+    wrs_path = parse_xml(root, 'wrs', 'path')
+    wrs_row = parse_xml(root, 'wrs', 'row')
+
+    # Build dictionary
     d = {"id": product_id,
          "type": "Feature",
          "bbox": bbox,
@@ -133,37 +162,62 @@ def parse_scene(path):
              "type": "xml"
            },
            "blue": {
-             "href": '',
+             "href": os.path.join(path, get_band_path(root, 'blue', sensor)),
              "type": "image/vnd.stac.geotiff",
            },
            "green": {
-             "href": green_path,
+             "href": os.path.join(path, get_band_path(root, 'green', sensor)),
              "type": "image/vnd.stac.geotiff",
            },
            "red": {
-             "href": red_path,
+             "href": os.path.join(path, get_band_path(root, 'red', sensor)),
              "type": "image/vnd.stac.geotiff",
            },
            "nir": {
-             "href": nir_path,
+             "href": os.path.join(path, get_band_path(root, 'nir', sensor)),
              "type": "image/vnd.stac.geotiff",
            },
            "swir1": {
-             "href": swir1_path,
+             "href": os.path.join(path, get_band_path(root, 'swir1', sensor)),
              "type": "image/vnd.stac.geotiff",
            },
            "swir2": {
-             "href": swir2_path,
+             "href": os.path.join(path, get_band_path(root, 'swir2', sensor)),
              "type": "image/vnd.stac.geotiff",
            },
            "pixel_qa": {
-             "href": pixel_qa_path,
+             "href": os.path.join(path, get_band_path(root, 'pixel_qa', sensor)),
              "type": "image/vnd.stac.geotiff",
            },
            "radsat_qa": {
-             "href": radsat_qa_path,
+             "href": os.path.join(path, get_band_path(root, 'radsat_qa', sensor)),
              "type": "image/vnd.stac.geotiff",
            }
          }
         }
     return d
+
+if __name__ == '__main__':
+    epilog = """
+Populate the ministac database with metadata parsed from a list of Landsat espa
+scenes. Essential metadata are parsed from the xml and MTL file present in each directory.
+
+--------------
+Example usage
+--------------
+./landsat_espa.py LC08*
+"""
+    parser = argparse.ArgumentParser(epilog=epilog,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+
+    parser.add_argument('paths',
+                        nargs='+',
+                        help = 'List of directories containing landsat data processed by espa')
+    parsed_args = parser.parse_args()
+    dict_list = []
+    for path in vars(parsed_args)['paths']:
+        try:
+            dict_list.append(parse_scene(path))
+        except Exception as e:
+            print('skipped %s\nreason: %s' % (path, e))
+    pprint(dict_list)
