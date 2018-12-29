@@ -257,4 +257,4 @@ Example usage
                 dict_list.append(parse_scene(path))
             except Exception as e:
                 print('skipped %s\nreason: %s' % (path, e))
-        ministac.add_items(dict_list, collection)
+        ministac.add_items(dict_list, parsed_args['collection'])
