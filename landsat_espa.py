@@ -10,7 +10,10 @@ import xml.etree.ElementTree as ET
 
 from rasterio.crs import CRS
 from rasterio.features import bounds
-from pyproj import Proj
+from jsonschema import validate
+
+import ministac
+from ministac.globals import ITEM_SCHEMA
 
 
 LANDSAT_BANDS = {'TM': {'blue': 'sr_band1',
@@ -110,7 +113,6 @@ def parse_scene(path):
     # some bands have been opend in qgis for example)
     xml_file_list = [x for x in file_list if xml_pattern.search(x)]
     mtl_file_list = [x for x in file_list if mtl_pattern.search(x)]
-    print(mtl_file_list)
     if (len(mtl_file_list) != 1) or (len(xml_file_list) != 1):
         raise ValueError('Could not identify a unique xml or mtl metadata file')
     mtl_file = mtl_file_list[0]
@@ -142,7 +144,7 @@ def parse_scene(path):
     # Build dictionary
     d = {"id": product_id,
          "type": "Feature",
-         "bbox": bbox,
+         "bbox": list(bbox),
          "geometry": geom,
          "properties": {
            "datetime": dt_str,
@@ -205,19 +207,54 @@ scenes. Essential metadata are parsed from the xml and MTL file present in each 
 --------------
 Example usage
 --------------
-./landsat_espa.py LC08*
+# First, dry run to make sure parsing is successful
+./landsat_espa.py /path/to/scenes/LC08* --collection landsat_sr_8 --dryrun
+
+# In case of validation errors (Invalid json), investigate what's invalid
+./landsat_espa.py /path/to/scenes/LC08* --collection landsat_sr_8 --dryrun --reason
+
+# If everything is OK, ingest the metadata in the ministac database
+./landsat_espa.py /path/to/scenes/LC08* --collection landsat_sr_8 --dryrun
 """
     parser = argparse.ArgumentParser(epilog=epilog,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument('paths',
                         nargs='+',
-                        help = 'List of directories containing landsat data processed by espa')
-    parsed_args = parser.parse_args()
-    dict_list = []
-    for path in vars(parsed_args)['paths']:
-        try:
-            dict_list.append(parse_scene(path))
-        except Exception as e:
-            print('skipped %s\nreason: %s' % (path, e))
-    pprint(dict_list)
+                        help='List of directories containing landsat data processed by espa')
+    parser.add_argument('-c', '--collection',
+                        required=False,
+                        type=str,
+                        help='Name of the collection (must already exist in the ministac database)')
+    parser.add_argument('--dryrun',
+                        action='store_true',
+                        help='Parses and validates generated metadata without ingesting to db')
+    parser.add_argument('--reason',
+                        action='store_true',
+                        help='In case dry run returns validation errors (invalid jsons), re-run it and print the reason of the invalidity')
+    parsed_args = vars(parser.parse_args())
+    if parsed_args['dryrun']:
+        for path in parsed_args['paths']:
+            print(path)
+            try:
+                scene_meta = parse_scene(path)
+                try:
+                    validate(scene_meta, ITEM_SCHEMA)
+                    print('OK')
+                except Exception as e:
+                    print('Invalid json')
+                    if parsed_args['reason']:
+                        print(e)
+            except Exception as e:
+                print('Failed to parse scene metadata')
+    else:
+        if parsed_args['collection'] is None:
+            print('You must provide the name of an existing collection')
+            sys.exit()
+        dict_list = []
+        for path in parsed_args['paths']:
+            try:
+                dict_list.append(parse_scene(path))
+            except Exception as e:
+                print('skipped %s\nreason: %s' % (path, e))
+        ministac.add_items(dict_list, collection)
