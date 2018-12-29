@@ -1,0 +1,17 @@
+id: landsat_sr_4
+stac_version: 0.6.0
+title: Landsat 4, processed to surface reflectance
+description: Landsat 4 data in scenes cut along the WRS2 grid
+license: proprietary
+keywords: [Landsat, usgs, espa]
+providers:
+    - name: Espa/USGS
+      roles: [producer, licensor]
+      url: "https://landsat.usgs.gov/landsat-surface-reflectance-data-products"
+extent:
+    spatial: [-180.0, -82.0, 180.0, 82.0]
+    temporal: ["1982-07-16T00:00:00Z", "1993-12-14T00:00:00Z"]
+links: 
+    - rel: self
+      href: "https://github.com/loicdtx/ministac-admin/collections/landsat_sr_4.yaml"
+
