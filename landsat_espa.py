@@ -258,3 +258,10 @@ Example usage
             except Exception as e:
                 print('skipped %s\nreason: %s' % (path, e))
         ministac.add_items(dict_list, parsed_args['collection'])
+
+# TODO: Rewrote the whole script
+    # - write a read_xml(filename), that reads the metadata file from either s3, filesystem or archive 
+    # (return a ElementTree root)
+    # - Parse everything from the ETroot (need to check if it contains cloud cover)
+    # - Retrieve the geometry from the pickled dict of WRS2 geometries
+    # - Forget about individual bands paths
