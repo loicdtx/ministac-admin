@@ -7,6 +7,7 @@ import argparse
 from glob import glob
 import re
 import xml.etree.ElementTree as ET
+import tarfile
 
 from rasterio.crs import CRS
 from rasterio.features import bounds
@@ -14,6 +15,7 @@ from jsonschema import validate
 
 import ministac
 from ministac.globals import ITEM_SCHEMA
+import s3
 
 
 LANDSAT_BANDS = {'TM': {'blue': 'sr_band1',
@@ -33,6 +35,80 @@ LANDSAT_BANDS = {'TM': {'blue': 'sr_band1',
                               'radsat_qa': 'radsat_qa',
                               'swir2': 'sr_band7'}}
 LANDSAT_BANDS['ETM'] = LANDSAT_BANDS['TM']
+
+
+def read_xml(path, bucket=None):
+    """Read a landsat metadata xml file, either from filesystem path, archive or s3 bucket
+
+    Args:
+        path (str): Path to Landsat directory or Landsat archive
+        bucket (str): Optional bucket name containing the landsat scene
+
+    Return:
+        ElementTree: The ElementTree object of the file
+    """
+    if bucket is not None:
+        # Retrieve key of xml file
+        xml_key = s3.list_files(bucket=bucket, path=path,
+                                pattern=r'.*\.xml$')[0]
+        # s3.read_file()
+        xml_str = s3.read_file(bucket=bucket, path=xml_key)
+        # Build ET root
+        # TODO: Figure out how to instantiate ElementTree from string
+        root = ET.fromstring(xml_str)
+    else:
+        if tarfile.is_tarfile(path):
+            with tarfile.open(path) as tar:
+                # LIst all files contained in the archive
+                file_list = tar.getnames()
+                # Filter to keep only xml
+                # TODO: Check that there's only one xml file in the archive raise Error otherwise
+                xml_file = [x for x in file_list if x.endswith('.xml')][0]
+                # Read the file 
+                xml_fileobj = tar.extractfile(xml_file)
+            root = ET.parse(xml_fileobj).getroot()
+        elif os.path.isdir(path):
+            # Let's hope there always only one xml file
+            xml_file = glob(os.path.join(path, '*.xml'))[0]
+            root = ET.parse(xml_file).getroot()
+        else:
+            raise ValueError("Don't know what to do with path; must point to directory or tar gz archive")
+    return root
+
+
+def read_mtl(path, bucket=None):
+    """Same as read_xml but for MTL file
+    TODO: Define return data structure of this function
+
+    Args:
+        path (str): Path to Landsat directory or Landsat archive
+        bucket (str): Optional bucket name containing the landsat scene
+
+    Returns:
+
+    """
+    if bucket is not None:
+        # Retrieve key of xml file
+        mtl_key = s3.list_files(bucket=bucket, path=path,
+                                pattern=r'.*MTL\.txt$')[0]
+        # s3.read_file()
+        mtl_str = s3.read_file(bucket=bucket, path=mtl_key)
+    else:
+        if tarfile.is_tarfile(path):
+            with tarfile.open(path) as tar:
+                # LIst all files contained in the archive
+                file_list = tar.getnames()
+                # Filter to keep only xml
+                # TODO: Check that there's only one txt file in the archive raise Error otherwise
+                mtl_file = [x for x in file_list if x.endswith('MTL.txt')][0]
+                # Read the file 
+                mtl_fileobj = tar.extractfile(mtl_file)
+        elif os.path.isdir(path):
+            # Let's hope there always only one xml file
+            mtl_file = glob(os.path.join(path, '*_MTL.txt'))[0]
+        else:
+            raise ValueError("Don't know what to do with path; must point to directory or tar gz archive")
+    return None
 
 
 def parse_mtl(f):
