@@ -7,6 +7,7 @@ import argparse
 import yaml
 
 import ministac
+from ministac.db import session_scope
 
 
 if __name__ == '__main__':
@@ -28,4 +29,5 @@ Example usage
     with open(parsed_args['meta_file']) as src:
         collection = yaml.load(src)
 
-    ministac.add_collection(collection)
+    with session_scope() as session:
+        ministac.add_collection(session, collection)

@@ -9,6 +9,7 @@ from importlib import import_module
 from jsonschema import validate
 import ministac
 from ministac.globals import ITEM_SCHEMA
+from ministac.db import session_scope
 
 from msadmin.datasets.landsat import parse
 
@@ -81,5 +82,6 @@ landsat_espa.py /path/to/scenes/LC08* --collection landsat_sr_8 --parser landsat
                 dict_list.append(parse(path))
             except Exception as e:
                 print('skipped %s\nreason: %s' % (path, e))
-        ministac.add_items(dict_list, parsed_args['collection'])
+        with session_scope() as session:
+            ministac.add_items(session, dict_list, parsed_args['collection'])
 
